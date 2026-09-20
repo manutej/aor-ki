@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PandaMia — product instrument</title>
+<style>
+  :root {
+    --bg: #14110d;
+    --panel: rgba(22,18,14,.78);
+    --ink: #f3ead7;
+    --muted: #b7a78c;
+    --gold: #d4af37;
+    --line: rgba(212,175,55,.28);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--ink); font-family: "Iowan Old Style", Palatino, Georgia, serif; overflow: hidden; }
+  #c { position: fixed; inset: 0; }
+  .top {
+    position: fixed; top: 22px; left: 26px; z-index: 4; pointer-events: none;
+  }
+  .eyebrow { letter-spacing: .22em; text-transform: uppercase; font-size: 11px; color: var(--gold); font-family: ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-weight: 500; font-size: 34px; letter-spacing: .02em; margin-top: 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 4px; max-width: 340px; line-height: 1.45; }
+  .panel {
+    position: fixed; top: 20px; right: 18px; width: 300px; z-index: 5;
+    background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px);
+    border-radius: 18px; padding: 16px 16px 14px; max-height: calc(100vh - 40px); overflow: auto;
+  }
+  .panel h2 { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); font-family: ui-sans-serif, system-ui, sans-serif; margin: 12px 0 8px; }
+  .panel h2:first-child { margin-top: 0; }
+  button, select {
+    background: #2a241c; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  button.active, button:hover { background: #3a3124; border-color: var(--gold); }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .list { display: flex; flex-direction: column; gap: 4px; }
+  .list button { border-radius: 10px; text-align: left; width: 100%; }
+  label.slide { display: block; font-size: 11px; color: var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; margin: 8px 0 4px; }
+  input[type=range] { width: 100%; accent-color: var(--gold); }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 10px; }
+  .legend { font-size: 11px; color: var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; margin-top: 8px; line-height: 1.5; }
+  .bottom {
+    position: fixed; left: 26px; bottom: 20px; z-index: 4; color: var(--muted);
+    font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; max-width: 420px; line-height: 1.45;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="top">
+  <div class="eyebrow">PandaMia · Example A of /aor-ki</div>
+  <h1>Command baton</h1>
+  <div class="sub">Organic sheaf, sealed oil mass, 639 Hz air cavity. Drag to orbit. Use the panel to explode and inspect subunits.</div>
+</div>
+<div class="panel">
+  <h2>View</h2>
+  <div class="row">
+    <button id="vProduct" class="active">Product</button>
+    <button id="vExplode">Explode</button>
+    <button id="vXray">X-ray</button>
+    <button id="vSection">Section</button>
+  </div>
+  <label class="slide">Explode <span id="exVal">0</span></label>
+  <input id="explode" type="range" min="0" max="100" value="0"/>
+  <label class="slide">Section <span id="secVal">off</span></label>
+  <input id="section" type="range" min="0" max="100" value="0"/>
+  <h2>Chrome</h2>
+  <div class="row">
+    <button id="cSilver" class="active">Silver</button>
+    <button id="cGold">Gold</button>
+    <button id="cWhite">White</button>
+  </div>
+  <h2>Wood skin</h2>
+  <select id="wood">
+    <option value="bamboo">Bamboo internodes</option>
+    <option value="ivory">Wada Ivory Buff</option>
+    <option value="ocher">Wada Yellow Ocher</option>
+    <option value="ecru">Wada Ecru</option>
+  </select>
+  <h2>Subunits</h2>
+  <div class="list" id="subs"></div>
+  <p class="note">Oil lives in four sealed TPU bladders, not in the Helmholtz pocket. The 639 Hz cavity is air. Dual O-rings at the caps. Foam crush path for a 2 m drop.</p>
+  <p class="legend">Ø34 × 128 mm · envelope 116.2 cm³ · oil analog 106.2 g · damper oil ~19.7 g in 21.6 cm³</p>
+</div>
+<div class="bottom">Thumb groove and second-finger recess face you. Nose cap carries the Class 2 pointer. Dials are internodal rings D1–D4.</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const S = 0.1; // 1 unit = 10 mm
+const L = 128 * S;
+const R = 17 * S;
+const PHI = 1.6180339887;
+
+const Z = {
+  nose: 0,
+  d1: 18.67*S,
+  helmNeck: 30.22*S,
+  d2: 48.89*S,
+  finger: 67.56*S,
+  cavity: 79.11*S,
+  tick: 90.66*S,
+  d3: 97.78*S,
+  thumb: 109.33*S,
+  d4: 116.46*S,
+  tail: 128*S
+};
+
+const chrome = {
+  silver: { color: 0xc0c0c8, metalness: 1, roughness: 0.16 },
+  gold:   { color: 0xd4af37, metalness: 1, roughness: 0.22 },
+  white:  { color: 0xf4f1ea, metalness: 0.92, roughness: 0.12 }
+};
+const woods = {
+  bamboo: 0xc4a574,
+  ivory: 0xebd3a2,
+  ocher: 0xe2b540,
+  ecru: 0xc2ae93
+};
+
+let chromeKey = 'silver';
+let woodKey = 'bamboo';
+let explodeT = 0;
+let sectionT = 0;
+let xray = false;
+let focus = 'all';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14110d);
+scene.fog = new THREE.Fog(0x14110d, 18, 42);
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 80);
+camera.position.set(9, 6.5, 14);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, L/2, 0);
+controls.maxDistance = 28;
+controls.minDistance = 6;
+
+const hemi = new THREE.HemisphereLight(0xfff1d6, 0x2a2118, 1.1);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffe6b8, 2.2);
+key.position.set(6, 12, 8);
+key.castShadow = true;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x9bb7ff, 0.85);
+rim.position.set(-8, 4, -6);
+scene.add(rim);
+const fill = new THREE.PointLight(0xd4af37, 1.1, 30);
+fill.position.set(-3, L*0.6, 5);
+scene.add(fill);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(18, 64),
+  new THREE.MeshStandardMaterial({ color: 0x1b1712, roughness: 0.9, metalness: 0.05 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.35;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const root = new THREE.Group();
+scene.add(root);
+
+const groups = {};
+function g(name) {
+  const o = new THREE.Group();
+  o.name = name;
+  o.userData.home = new THREE.Vector3();
+  o.userData.explode = new THREE.Vector3();
+  groups[name] = o;
+  root.add(o);
+  return o;
+}
+const sheafG = g('sheaf');
+const woodG = g('wood');
+const dialsG = g('dials');
+const capsG = g('caps');
+const oilG = g('oil');
+const magG = g('magnetic');
+const helmG = g('helmholtz');
+const coreG = g('core');
+const gripG = g('grip');
+const micG = g('mics');
+const laserG = g('laser');
+
+function matChrome() {
+  const c = chrome[chromeKey];
+  return new THREE.MeshStandardMaterial({ color: c.color, metalness: c.metalness, roughness: c.roughness });
+}
+function matWood() {
+  return new THREE.MeshStandardMaterial({ color: woods[woodKey], roughness: 0.62, metalness: 0.08 });
+}
+function matSilicone(opacity=0.92) {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xcbb9a3, roughness: 0.38, metalness: 0.04,
+    transmission: xray ? 0.55 : 0.08, thickness: 0.6,
+    transparent: true, opacity, clearcoat: 0.4, clearcoatRoughness: 0.5
+  });
+}
+function matOil() {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xc9a227, roughness: 0.12, metalness: 0.0,
+    transmission: 0.55, thickness: 0.8, transparent: true, opacity: 0.72,
+    attenuationColor: 0x8a5a12, attenuationDistance: 1.2
+  });
+}
+function matAir() {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0x9ad7ff, roughness: 0.05, transmission: 0.85, transparent: true, opacity: 0.35
+  });
+}
+
+function addCyl(parent, r, h, y, material, extra={}) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, extra.r2 ?? r, h, extra.seg ?? 48), material);
+  m.position.y = y;
+  m.castShadow = true;
+  m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+function addTorus(parent, r, tube, y, material) {
+  const m = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 16, 48), material);
+  m.rotation.x = Math.PI/2;
+  m.position.y = y;
+  m.castShadow = true;
+  parent.add(m);
+  return m;
+}
+
+function build() {
+  [sheafG, woodG, dialsG, capsG, oilG, magG, helmG, coreG, gripG, micG, laserG].forEach(o => {
+    while (o.children.length) o.remove(o.children[0]);
+  });
+
+  // standing baton: tail on ground, nose up
+  const y = (z) => L - z;
+
+  // wood internodes
+  addCyl(woodG, R*0.92, L*0.96, L/2, matWood());
+  [Z.d1, Z.d2, Z.d3, Z.d4].forEach(z => {
+    addTorus(woodG, R*0.98, 0.16, y(z), matWood());
+  });
+
+  // silicone sheaf
+  addCyl(sheafG, R*1.06, L*0.9, L/2, matSilicone(xray ? 0.28 : 0.78));
+
+  // caps acrylic + silver tips
+  const acr = new THREE.MeshPhysicalMaterial({ color: 0xe8f4ff, roughness: 0.06, transmission: 0.7, thickness: 0.5, metalness: 0.05, transparent: true, opacity: 0.7 });
+  addCyl(capsG, R*0.95, 0.8, y(0)+0.15, acr);
+  addCyl(capsG, R*0.95, 0.8, y(L)-0.15, acr);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(R*0.72, 32, 16, 0, Math.PI*2, 0, Math.PI/2), matChrome());
+  tip.rotation.x = Math.PI;
+  tip.position.y = y(0) + 0.55;
+  capsG.add(tip);
+  const tip2 = new THREE.Mesh(new THREE.SphereGeometry(R*0.72, 32, 16, 0, Math.PI*2, 0, Math.PI/2), matChrome());
+  tip2.position.y = y(L) - 0.55;
+  capsG.add(tip2);
+
+  // dials
+  [Z.d1, Z.d2, Z.d3, Z.d4].forEach((z,i) => {
+    addTorus(dialsG, R*1.08, 0.09, y(z), matChrome());
+    const label = ['D1 mode','D2 gain','D3 channel','D4 macro'][i];
+    dialsG.children[dialsG.children.length-1].userData.label = label;
+  });
+
+  // sealed oil bladders
+  const bladders = [
+    [28*S, 12*S], [54*S, 10*S], [82*S, 8*S], [102*S, 8*S]
+  ];
+  bladders.forEach(([z,h]) => {
+    const mesh = new THREE.Mesh(new THREE.TorusGeometry(R*0.72, 0.22, 18, 40), matOil());
+    mesh.rotation.x = Math.PI/2;
+    mesh.position.y = y(z + h/2);
+    oilG.add(mesh);
+  });
+
+  // magnetic films
+  addCyl(magG, R*0.86, L*0.7, L/2, new THREE.MeshStandardMaterial({ color: 0x4a3b55, metalness: 0.4, roughness: 0.45, transparent: true, opacity: xray||explodeT>0.15 ? 0.55 : 0.0 }));
+
+  // helmholtz air + piezo
+  const cav = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 16), matAir());
+  cav.position.y = y(Z.cavity);
+  helmG.add(cav);
+  addCyl(helmG, 0.08, 1.1, y((Z.cavity+Z.helmNeck)/2), new THREE.MeshStandardMaterial({ color: 0x7ec8e3, roughness: 0.3 }));
+  const piezo = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 24), matChrome());
+  piezo.position.set(0.55, y(Z.cavity), 0);
+  piezo.rotation.z = Math.PI/2;
+  helmG.add(piezo);
+
+  // floating core
+  addCyl(coreG, R*0.42, L*0.55, L/2, new THREE.MeshStandardMaterial({ color: 0x2c3338, roughness: 0.4, metalness: 0.35 }));
+  const cell = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.6, 0.28), new THREE.MeshStandardMaterial({ color: 0x8fd19e, roughness: 0.5 }));
+  cell.position.set(0.15, y(Z.cavity), 0);
+  coreG.add(cell);
+
+  // grooves as dark organic pads
+  function pad(z, w, d, az) {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(w*S*0.55, 20, 14),
+      new THREE.MeshPhysicalMaterial({ color: 0x8d7a64, roughness: 0.55, transparent: true, opacity: 0.95 })
+    );
+    const a = az * Math.PI/180;
+    m.position.set(Math.sin(a)*(R+0.05), y(z), Math.cos(a)*(R+0.05));
+    m.scale.set(1, 0.55, 0.7);
+    gripG.add(m);
+  }
+  pad(Z.finger, 18, 4.5, 18);
+  pad(Z.tick, 8, 1.8, -22);
+  pad(Z.thumb, 18, 3.5, 18);
+
+  // mics
+  [0, Math.PI].forEach(a => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), new THREE.MeshStandardMaterial({ color: 0x222 }));
+    m.position.set(Math.cos(a)*R*0.7, y(72*S), Math.sin(a)*R*0.7);
+    micG.add(m);
+  });
+
+  // laser beam (visual only)
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.015, 3.2, 8),
+    new THREE.MeshBasicMaterial({ color: 0x39ff14, transparent: true, opacity: 0.55 })
+  );
+  beam.position.y = y(0) + 2.1;
+  laserG.add(beam);
+
+  // explode vectors (radial + axial separation)
+  sheafG.userData.explode.set(0, 0, 2.2);
+  woodG.userData.explode.set(0, 0, 0);
+  dialsG.userData.explode.set(2.4, 0, 0);
+  capsG.userData.explode.set(0, 2.0, 0);
+  oilG.userData.explode.set(-2.2, 0.4, 0);
+  magG.userData.explode.set(0, 0, -2.4);
+  helmG.userData.explode.set(2.6, 0.8, 0);
+  coreG.userData.explode.set(-2.8, 0, 0);
+  gripG.userData.explode.set(0, -0.4, 2.6);
+  micG.userData.explode.set(1.6, 0.6, 1.6);
+  laserG.userData.explode.set(0, 2.8, 0);
+}
+
+build();
+
+const subunits = [
+  ['all','Whole product'],
+  ['sheaf','Conductive silicone sheaf'],
+  ['wood','Bamboo internodes'],
+  ['dials','Four programmable dials'],
+  ['caps','Silver-tipped acrylic caps'],
+  ['oil','Sealed oil bladders'],
+  ['magnetic','Double magnetic insulation'],
+  ['helmholtz','639 Hz air cavity'],
+  ['core','Floating electronics core'],
+  ['grip','Thumb + second-finger grooves'],
+  ['mics','AI-sensitive mic pair'],
+  ['laser','Class 2 pointer + DriveLock']
+];
+const subBox = document.getElementById('subs');
+subunits.forEach(([id,label]) => {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.dataset.id = id;
+  if (id==='all') b.classList.add('active');
+  b.onclick = () => {
+    focus = id;
+    [...subBox.children].forEach(x => x.classList.toggle('active', x===b));
+    frameSub(id);
+  };
+  subBox.appendChild(b);
+});
+
+function frameSub(id) {
+  if (id==='all') {
+    controls.target.set(0, L/2, 0);
+    camera.position.set(9, 6.5, 14);
+    return;
+  }
+  const o = groups[id];
+  if (!o) return;
+  const box = new THREE.Box3().setFromObject(o);
+  const c = box.getCenter(new THREE.Vector3());
+  controls.target.copy(c);
+  camera.position.copy(c).add(new THREE.Vector3(4.5, 2.2, 5.5));
+}
+
+function applyExplode() {
+  Object.values(groups).forEach(o => {
+    o.position.copy(o.userData.explode).multiplyScalar(explodeT);
+  });
+}
+function applyFocus() {
+  Object.entries(groups).forEach(([k,o]) => {
+    const on = focus==='all' || focus===k;
+    o.traverse(ch => {
+      if (ch.material && ch.material.opacity !== undefined && focus!=='all') {
+        ch.material.opacity = on ? Math.max(ch.material.opacity, 0.85) : 0.07;
+        ch.material.transparent = true;
+      }
+      ch.visible = true;
+    });
+  });
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+addEventListener('resize', resize);
+resize();
+
+document.getElementById('explode').oninput = (e) => {
+  explodeT = e.target.value/100;
+  document.getElementById('exVal').textContent = e.target.value;
+  applyExplode();
+};
+document.getElementById('section').oninput = (e) => {
+  sectionT = e.target.value/100;
+  document.getElementById('secVal').textContent = sectionT===0 ? 'off' : e.target.value+'%';
+};
+function setView(mode) {
+  ['vProduct','vExplode','vXray','vSection'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById('v'+mode[0].toUpperCase()+mode.slice(1)).classList.add('active');
+  xray = mode==='xray';
+  if (mode==='product') { explodeT = 0; document.getElementById('explode').value = 0; }
+  if (mode==='explode') { explodeT = 0.72; document.getElementById('explode').value = 72; }
+  if (mode==='section') { sectionT = 0.5; document.getElementById('section').value = 50; }
+  document.getElementById('exVal').textContent = Math.round(explodeT*100);
+  applyExplode();
+  build();
+}
+document.getElementById('vProduct').onclick = () => setView('product');
+document.getElementById('vExplode').onclick = () => setView('explode');
+document.getElementById('vXray').onclick = () => setView('xray');
+document.getElementById('vSection').onclick = () => setView('section');
+
+function setChrome(k) {
+  chromeKey = k;
+  ['cSilver','cGold','cWhite'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById('c'+k[0].toUpperCase()+k.slice(1)).classList.add('active');
+  build();
+}
+document.getElementById('cSilver').onclick = () => setChrome('silver');
+document.getElementById('cGold').onclick = () => setChrome('gold');
+document.getElementById('cWhite').onclick = () => setChrome('white');
+document.getElementById('wood').onchange = (e) => { woodKey = e.target.value; build(); };
+
+const clip = new THREE.Plane(new THREE.Vector3(-1,0,0), 0);
+
+function tick() {
+  controls.update();
+  if (sectionT > 0.01) {
+    clip.constant = (sectionT-0.5)*3.4;
+    renderer.clippingPlanes = [clip];
+    renderer.localClippingEnabled = true;
+  } else {
+    renderer.clippingPlanes = [];
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>
